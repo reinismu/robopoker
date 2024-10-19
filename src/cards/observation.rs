@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use super::card::Card;
 use super::deck::Deck;
 use super::hand::Hand;
@@ -14,7 +16,7 @@ use std::cmp::Ordering;
 /// the equity of a given hand by comparing strength all possible opponent hands.
 /// This could be more memory efficient by using [Card; 2] for pocket Hands,
 /// then impl From<[Card; 2]> for Hand. But the convenience of having the same Hand type is worth it.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Observation {
     pocket: Hand, // if memory-bound: could be Hole/u16
     public: Hand, // if memory-bound: could be Board/[Option<Card>; 5]
@@ -165,4 +167,18 @@ mod tests {
         let random = Observation::from(Street::Rive);
         assert!(random == Observation::from(i64::from(random)));
     }
+
+    #[test]
+    #[cfg(feature = "shortdeck")]
+    fn correct_shortdeck_children() {
+        let obs = Observation::from((
+            Hand::from("As Ah"),
+            Hand::from("9d 7h 8c Ac Ad"),
+        ));
+
+        let equity = obs.equity();
+
+        assert!(equity > 0.99);
+    }
+
 }

@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["poker", "cards", "cfr", "mcts", "holdem"]
 license = "MIT"
 edition = "2021"
+members = [
+    "examples/protter",
+]
 
 [dependencies]
 colored = "2.0"
@@ -22,9 +25,14 @@ env_logger = "0.11.5"
 rayon = "1.10.0"
 byteorder = "1.5.0"
 indicatif = "0.17.8"
+anyhow = "1.0.90"
+serde = { version = "1.0.210", features = ["derive"] }
+bincode = "1.3.3"
+lz4_flex = { version = "0.11", default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["html_reports"] }
+plotters = "0.3"
 
 [[bench]]
 name = "benchmarks"

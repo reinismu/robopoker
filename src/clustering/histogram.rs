@@ -1,3 +1,6 @@
+use serde::Deserialize;
+use serde::Serialize;
+
 use crate::cards::observation::Observation;
 use crate::clustering::abstraction::Abstraction;
 use crate::Equity;
@@ -9,10 +12,10 @@ use std::ops::AddAssign;
 ///
 /// The sum of the weights is the total number of samples.
 /// The weight of an abstraction is the number of times it was sampled.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Histogram {
-    norm: usize,
-    weights: BTreeMap<Abstraction, usize>,
+    pub norm: usize,
+    pub weights: BTreeMap<Abstraction, usize>,
 }
 
 impl Histogram {
@@ -20,6 +23,10 @@ impl Histogram {
     /// returns 0 if the Abstraction was never witnessed.
     pub fn weight(&self, abstraction: &Abstraction) -> f32 {
         self.weights.get(abstraction).copied().unwrap_or(0usize) as f32 / self.norm as f32
+    }
+    
+    pub fn weights(&self) -> &BTreeMap<Abstraction, usize> {
+        &self.weights
     }
 
     /// all witnessed Abstractions.
@@ -113,8 +120,10 @@ impl Histogram {
 impl From<Observation> for Histogram {
     fn from(ref turn: Observation) -> Self {
         assert!(turn.street() == crate::cards::street::Street::Turn);
+        let children = turn.children().collect::<Vec<Observation>>();
+        log::info!("children: {:?}", children.len());
         Self::from(
-            turn.children()
+            children.iter()
                 .map(|river| Abstraction::from(river.equity()))
                 .collect::<Vec<Abstraction>>(),
         )
@@ -125,6 +134,17 @@ impl From<Vec<Abstraction>> for Histogram {
     fn from(a: Vec<Abstraction>) -> Self {
         a.into_iter()
             .fold(Histogram::default(), |hist, abs| hist.witness(abs))
+    }
+}
+
+impl From<Vec<Histogram>> for Histogram {
+    fn from(a: Vec<Histogram>) -> Self {
+        a.into_iter()
+            .fold(Histogram::default(), |hist, abs| {
+                let mut hist = hist;
+                hist.absorb(&abs);
+                hist
+            })
     }
 }
 

@@ -90,6 +90,7 @@ impl Layer {
             metric: self.inner_metric(),         // uniquely determined by outer layer
             points: self.inner_points(),         // uniquely determined by outer layer
         };
+
         layer.initial_kmeans();
         layer.cluster_kmeans();
         layer

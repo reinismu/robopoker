@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use super::centroid::Centroid;
 use crate::cards::isomorphism::Isomorphism;
 use crate::clustering::abstraction::Abstraction;
@@ -7,7 +9,8 @@ use std::collections::BTreeMap;
 /// intermediate data structure to reference during kmeans
 /// as we compute the Wasserstein distance between
 /// `Equivalence`s and the available `Abstraction`s > `Centroid`s > `Histogram`s
-#[derive(Default)]
+
+#[derive(Default, Serialize, Deserialize)]
 pub struct ObservationSpace(pub BTreeMap<Isomorphism, Histogram>);
 
 /// intermediate data structure to mutate during kmeans

@@ -1,6 +1,10 @@
+use serde::{Deserialize, Serialize};
+
+use crate::play::game::Game;
+
+use super::hand::Hand;
 use super::observation::Observation;
 use super::permutation::Permutation;
-use crate::play::game::Game;
 
 /// because of the equivalence of Suit,
 /// many Observations are strategically equivalent !
@@ -21,7 +25,7 @@ use crate::play::game::Game;
 /// see [`crate::cards::street::Street::n_isomorphisms`] for a sense of how much.
 /// but it's approx 4 (* 5) times smaller, as youd expect for without-replacement
 /// sampling on the last two Streets.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Isomorphism(pub Observation);
 
 impl From<Observation> for Isomorphism {
@@ -53,6 +57,10 @@ impl From<&Game> for Isomorphism {
 impl Isomorphism {
     pub fn is_canonical(observation: &Observation) -> bool {
         Permutation::from(observation) == Permutation::identity()
+    }
+
+    pub fn pocket(&self) -> &Hand {
+        self.0.pocket()
     }
 }
 

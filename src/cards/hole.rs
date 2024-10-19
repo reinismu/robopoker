@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use super::card::Card;
 use super::hand::Hand;
 use super::observation::Observation;
 
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Hole(Hand);
 
 impl Hole {

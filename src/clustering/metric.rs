@@ -24,7 +24,7 @@ impl Metric {
     /// where the support is over the Abstraction::Equity(i8) variant.
     pub fn emd(&self, source: &Histogram, target: &Histogram) -> f32 {
         match source.peek() {
-            Abstraction::Equity(_) => Self::difference(source, target),
+            Abstraction::Equity(_) => difference(source, target),
             Abstraction::Random(_) => self.wasserstein(source, target),
             Abstraction::Pocket(_) => unreachable!("no preflop emd"),
         }
@@ -47,21 +47,6 @@ impl Metric {
                 _ => unreachable!("invalid abstraction pair"),
             }
         }
-    }
-
-    /// here we have the luxury of calculating EMD
-    /// over 1-dimensional support of Abstraction::Equity
-    /// so we just integrate the absolute difference between CDFs
-    fn difference(x: &Histogram, y: &Histogram) -> f32 {
-        let mut total = 0.;
-        let mut cdf_x = 0.;
-        let mut cdf_y = 0.;
-        for abstraction in Abstraction::range() {
-            cdf_x += x.weight(abstraction);
-            cdf_y += y.weight(abstraction);
-            total += (cdf_x - cdf_y).abs();
-        }
-        total
     }
 
     /// Beware the asymmetry:
@@ -141,12 +126,32 @@ impl Metric {
     }
 }
 
+/// here we have the luxury of calculating EMD
+/// over 1-dimensional support of Abstraction::Equity
+/// so we just integrate the absolute difference between CDFs
+fn difference(x: &Histogram, y: &Histogram) -> f32 {
+    let mut total = 0.;
+    let mut cdf_x = 0.;
+    let mut cdf_y = 0.;
+    for abstraction in Abstraction::range() {
+        cdf_x += x.weight(abstraction);
+        cdf_y += y.weight(abstraction);
+        total += (cdf_x - cdf_y).abs();
+    }
+    total
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cards::hand::Hand;
+    use crate::cards::isomorphism::Isomorphism;
     use crate::cards::observation::Observation;
     use crate::cards::street::Street;
+    use crate::clustering::abstractor::Abstractor;
+    use crate::clustering::datasets::ObservationSpace;
     use crate::clustering::histogram::Histogram;
+    use crate::utils::persist::try_load;
 
     #[test]
     fn is_histogram_emd_zero() {
@@ -173,5 +178,74 @@ mod tests {
         let ref h1 = Histogram::from(Observation::from(Street::Turn));
         let ref h2 = Histogram::from(Observation::from(Street::Turn));
         assert!(metric.emd(h1, h2) == metric.emd(h2, h1));
+    }
+
+    #[test]
+    fn equity_emd_is_correct() {
+        let metric = Metric::default();
+        let abstractor = Abstractor::default();
+    
+        let h1 = abstractor.projection(&Isomorphism::from(Observation::from((
+            Hand::from("As Ac"),
+            Hand::from("2d 5h 8c Tc"),
+        ))));
+
+        let h2 = abstractor.projection(&Isomorphism::from(Observation::from((
+            Hand::from("Ks Kc"),
+            Hand::from("2d 5h 8c Tc"),
+        ))));
+
+        let h3 = abstractor.projection(&Isomorphism::from(Observation::from((
+            Hand::from("3s 7c"),
+            Hand::from("2d 5h 8c Tc"),
+        ))));
+
+        let emd_12 = metric.emd(&h1, &h2);
+        let emd_13 = metric.emd(&h1, &h3);
+
+        assert!(emd_12 < emd_13);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_emd() {
+        let qq = Isomorphism::from(Observation::from((
+            Hand::from("Qs Qh"),
+            Hand::from(""),
+        )));
+
+        let kk = Isomorphism::from(Observation::from((
+            Hand::from("Ks Kh"),
+            Hand::from(""),
+        )));
+
+        let j6: Isomorphism = Isomorphism::from(Observation::from((
+            Hand::from("Js 6h"),
+            Hand::from(""),
+        )));
+
+
+        let path = std::path::Path::new("/home/detuks/Projects/poker/robopoker/cache/shortdeck-create_pref_observation_space.lz4");
+
+        let space: ObservationSpace = try_load(path).unwrap();
+        let h_qq = space.0.get(&qq).unwrap();
+        let h_kk = space.0.get(&kk).unwrap();
+        let h_j6 = space.0.get(&j6).unwrap();
+
+        let emd_qq_kk = difference(&h_qq, &h_kk);
+        let emd_qq_j6 = difference(&h_qq, &h_j6);
+
+        assert!(emd_qq_j6 >  emd_qq_kk);
+    } 
+
+    #[test]
+    fn test_em2() {
+
+        let h1: Histogram = Histogram::from(vec![Abstraction::Equity(0),Abstraction::Equity(1)]);
+        let h2 = Histogram::from(vec![Abstraction::Equity(49),Abstraction::Equity(50)]);
+
+        let emd = difference(&h1, &h2);
+
+        assert!(emd == 25.);
     }
 }

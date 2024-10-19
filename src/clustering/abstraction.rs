@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::cards::hole::Hole;
 use crate::Probability;
 use std::hash::Hash;
@@ -8,7 +10,7 @@ use std::u64;
 /// - River: we use a i8 to represent the equity bucket, i.e. Equity(0) is the worst bucket, and Equity(50) is the best bucket.
 /// - Pre-Flop: we do not use any abstraction, rather store the 169 strategically-unique hands as u64.
 /// - Other Streets: we use a u64 to represent the hash signature of the centroid Histogram over lower layers of abstraction.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Abstraction {
     Equity(i8),   // river
     Random(u64),  // flop, turn
@@ -27,6 +29,13 @@ impl Abstraction {
     }
     fn floatize(q: i8) -> Probability {
         Probability::from(q) / Probability::from(Self::N)
+    }
+    pub fn value(&self) -> i8 {
+        match self {
+            Self::Equity(n) => *n,
+            Self::Random(n) => *n as i8,
+            Self::Pocket(_) => unreachable!("no preflop into value"),
+        }
     }
     const N: i8 = 50;
     const BUCKETS: [Self; Self::N as usize + 1] = Self::buckets();

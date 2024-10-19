@@ -74,6 +74,7 @@ impl Abstractor {
                 inner
                     .children()
                     .map(|outer| Isomorphism::from(outer)) // isomorphism translation
+                    // TODO: Shouldnt we make this unique first? 
                     .map(|outer| self.abstraction(&outer))
                     .collect::<Vec<Abstraction>>(),
             ),
