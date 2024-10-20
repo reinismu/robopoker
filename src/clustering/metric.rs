@@ -240,12 +240,25 @@ mod tests {
 
     #[test]
     fn test_em2() {
+        let metric = Metric::default();
 
-        let h1: Histogram = Histogram::from(vec![Abstraction::Equity(0),Abstraction::Equity(1)]);
-        let h2 = Histogram::from(vec![Abstraction::Equity(49),Abstraction::Equity(50)]);
+        let h1 = Histogram::from(vec![
+            Abstraction::Equity(1),Abstraction::Equity(1),Abstraction::Equity(1),Abstraction::Equity(1),
+             Abstraction::Equity(4),Abstraction::Equity(4),Abstraction::Equity(4),
+             Abstraction::Equity(9),Abstraction::Equity(9),
+            ]);
 
-        let emd = difference(&h1, &h2);
+        let h2 = Histogram::from(vec![
+            Abstraction::Equity(1),Abstraction::Equity(1),
+            Abstraction::Equity(4),Abstraction::Equity(4),Abstraction::Equity(4),
+            Abstraction::Equity(9),Abstraction::Equity(9),Abstraction::Equity(9),Abstraction::Equity(9),
+        ]);
 
-        assert!(emd == 25.);
+        println!("{}", h1);
+        println!("{}", h2);
+
+        let emd: f32 = metric.emd(&h1, &h2);
+
+        assert!(emd == 0.);
     }
 }

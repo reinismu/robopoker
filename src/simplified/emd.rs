@@ -131,8 +131,8 @@ mod tests {
     fn test_emd2() {
         let emd_context = EMDContext::new();
 
-        let h1 = Histogram::from(vec![Abstraction::Equity(0), Abstraction::Equity(50)]);
-        let h2 = Histogram::from(vec![Abstraction::Equity(25), Abstraction::Equity(25)]);
+        let h1 = Histogram::from(vec![Abstraction::Equity(0), Abstraction::Equity(1)]);
+        let h2 = Histogram::from(vec![Abstraction::Equity(49), Abstraction::Equity(50)]);
 
         let emd = emd_context.approximate_emd(&h1, &h2);
 

@@ -38,6 +38,32 @@ pub fn calculate() {
     log::info!("Preflop space size {}", pref_observation_space.0.len());
 }
 
+fn create_turn_observation_space() -> ObservationSpace {
+    log::info!("creating turn observation space");
+    let isomorphisms = Observation::exhaust(Street::Turn)
+        .filter(Isomorphism::is_canonical)
+        .map(Isomorphism::from)
+        .collect::<Vec<Isomorphism>>();
+    let progress = create_progress(isomorphisms.len());
+
+    let space = isomorphisms
+        .into_par_iter()
+        .map(|isomorphism| (isomorphism, create_turn_histogram(&isomorphism)))
+        .inspect(|_| progress.inc(1))
+        .collect::<BTreeMap<Isomorphism, Histogram>>();
+
+    ObservationSpace(space)
+}
+
+fn create_turn_histogram(turn_isomorphism: &Isomorphism) -> Histogram {
+    let obs = turn_isomorphism.0;
+
+    obs.children()
+        .map(|river| Abstraction::from(river.equity()))
+        .collect::<Vec<Abstraction>>()
+        .into()
+}
+
 fn create_pref_observation_space(flop_observation_space: &ObservationSpace) -> ObservationSpace {
     log::info!("creating flop observation space");
     let isomorphisms = Observation::exhaust(Street::Pref)
@@ -70,32 +96,6 @@ fn create_flop_observation_space(turn_observation_space: &ObservationSpace) -> O
         .collect::<BTreeMap<Isomorphism, Histogram>>();
 
     ObservationSpace(space)
-}
-
-fn create_turn_observation_space() -> ObservationSpace {
-    log::info!("creating turn observation space");
-    let isomorphisms = Observation::exhaust(Street::Turn)
-        .filter(Isomorphism::is_canonical)
-        .map(Isomorphism::from)
-        .collect::<Vec<Isomorphism>>();
-    let progress = create_progress(isomorphisms.len());
-
-    let space = isomorphisms
-        .into_par_iter()
-        .map(|isomorphism| (isomorphism, create_turn_histogram(&isomorphism)))
-        .inspect(|_| progress.inc(1))
-        .collect::<BTreeMap<Isomorphism, Histogram>>();
-
-    ObservationSpace(space)
-}
-
-fn create_turn_histogram(turn_isomorphism: &Isomorphism) -> Histogram {
-    let obs = turn_isomorphism.0;
-
-    obs.children()
-        .map(|river| Abstraction::from(river.equity()))
-        .collect::<Vec<Abstraction>>()
-        .into()
 }
 
 fn create_flop_histogram(flop_isomorphism: &Isomorphism, turn_observation_space: &ObservationSpace) -> Histogram {

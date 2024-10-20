@@ -134,6 +134,7 @@ impl Abstractor {
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
+use rayon::iter::IntoParallelIterator;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Read;
