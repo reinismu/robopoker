@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub mod emd;
+pub mod lsh;
 
 pub fn calculate() {
     let turn_observation_space = persisted_function(
