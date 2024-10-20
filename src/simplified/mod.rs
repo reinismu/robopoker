@@ -34,50 +34,41 @@ pub fn kmeans() {
     )
     .unwrap();
 
-    // get entries vec
-    let samples = turn_observation_space.0.into_iter().collect::<Vec<_>>();
-    let dim_samples = samples.iter().flat_map(|(i,h)| h.raw_distribution()).collect::<Vec<_>>();
 
-    let max_iter = 10;
+    log::info!(
+        "Turn space size = {}",
+        turn_observation_space.0.len()
+    );
 
-    // Calculate kmeans, using kmean++ as initialization-method
-    // KMeans<_, 8> specifies to use f64 SIMD vectors with 8 lanes (e.g. AVX512)
-    let kmean: KMeans<_, 8, _> = KMeans::new(dim_samples, samples.len(), 51, HistogramDistance);
-
-    // config with callback
-    let conf = KMeansConfig::build()
-		.init_done(&|_| log::info!("Turn Kmeans Initialization completed."))
-		.iteration_done(&|s, nr, new_distsum|
-			log::info!("Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
-				nr, s.distsum, new_distsum, s.distsum - new_distsum))
-		.build();
-
-    let result = kmean.kmeans_lloyd(128, max_iter, KMeans::init_kmeanplusplus, &conf);
-
-    let assignements = result.assignments;
-
-    // assignments contain index where each sample belongs to
-
-    let clusters = assignements.iter().enumerate().fold(HashMap::new(), |mut acc, (idx, cluster)| {
-        acc.entry(*cluster).or_insert_with(Vec::new).push(samples[idx].clone());
-        acc
-    });
+    let turn_observation_space_clusters =
+        persisted_function("cluster_turn_observation_space_500_300", || {
+            cluster_turn_observation_space(&turn_observation_space, 500, 300)
+        })
+        .unwrap();
 
     // print clusters
-    for (cluster, samples) in clusters.iter() {
-        let first = samples.first().unwrap();
-        log::info!("Cluster ({:.2}) {}: {:?}", first.1.equity(), first.0, samples.len());
+    for cluster in turn_observation_space_clusters.iter() {
+        let first = cluster.first().unwrap();
+        log::info!(
+            "Cluster ({:.2}) {}: {:?}",
+            turn_observation_space.0.get(first).unwrap().equity(),
+            first,
+            cluster.len()
+        );
     }
 
     // Print first cluster random 20 samples
-    let first_cluster = clusters.get(&0).unwrap();
+    let first_cluster = turn_observation_space_clusters.first().unwrap();
     let mut rng = thread_rng();
     let samples = first_cluster.choose_multiple(&mut rng, 20);
-    
-    samples.for_each(|(i, h)| {
-        log::info!("{}: {:.2}", i, h.equity());
+
+    samples.for_each(|i| {
+        log::info!(
+            "{}: {:.2}",
+            i,
+            turn_observation_space.0.get(i).unwrap().equity()
+        );
     });
-    
 
     // println!("Centroids {}: {:?}", result.centroids.len(), result.centroids);
     // // println!("Cluster-Assignments: {:?}", result.assignments);
@@ -118,7 +109,11 @@ pub fn calculate() {
             acc
         });
 
-    log::info!("LSH Map size: {} LSH = {}", lsh_map.len(), lsh.describe().unwrap());
+    log::info!(
+        "LSH Map size: {} LSH = {}",
+        lsh_map.len(),
+        lsh.describe().unwrap()
+    );
 
     let qq_turn = Isomorphism::from(Observation::from((
         Hand::from("As Ah"),
@@ -127,14 +122,20 @@ pub fn calculate() {
 
     let qq_histogram = turn_observation_space.0.get(&qq_turn).unwrap();
 
-    let buckets = lsh.query_bucket_ids(&qq_histogram.raw_distribution()).unwrap();
+    let buckets = lsh
+        .query_bucket_ids(&qq_histogram.raw_distribution())
+        .unwrap();
 
     log::info!("Found {} similar hands for {}", buckets.len(), qq_turn);
     // print similar hands
     for bucket in buckets.iter().take(10) {
         let isomorphisms = lsh_map.get(&bucket).unwrap();
         for isomorphism in isomorphisms {
-            log::info!("Isomorphism: {} equity: {}", isomorphism, isomorphism.0.equity());
+            log::info!(
+                "Isomorphism: {} equity: {}",
+                isomorphism,
+                isomorphism.0.equity()
+            );
         }
     }
 
@@ -155,6 +156,59 @@ pub fn calculate() {
     // ).unwrap();
 
     // log::info!("Preflop space size {}", pref_observation_space.0.len());
+}
+
+fn cluster_turn_observation_space(
+    turn_observation_space: &ObservationSpace,
+    k: usize,
+    max_iter: usize,
+) -> Vec<Vec<Isomorphism>> {
+    let samples = turn_observation_space.0.iter().collect::<Vec<_>>();
+    let dim_samples = samples
+        .iter()
+        .flat_map(|(_, h)| h.raw_distribution())
+        .collect::<Vec<_>>();
+
+    // Calculate kmeans, using kmean++ as initialization-method
+    // KMeans<_, 8> specifies to use f64 SIMD vectors with 8 lanes (e.g. AVX512)
+    let kmean: KMeans<_, 8, _> = KMeans::new(dim_samples, samples.len(), 51, HistogramDistance);
+
+    // config with callback
+    let conf = KMeansConfig::build()
+        .init_done(&|_| log::info!("Turn Kmeans Initialization completed."))
+        .iteration_done(&|s, nr, new_distsum| {
+            log::info!(
+                "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
+                nr,
+                s.distsum,
+                new_distsum,
+                s.distsum - new_distsum
+            )
+        })
+        .abort_strategy(kmeans::AbortStrategy::NoImprovementForXIterations {
+            x: 40,
+            threshold: 10.,
+            abort_on_negative: false,
+        })
+        .build();
+
+    log::info!("Starting KMeans clustering");
+    let result = kmean.kmeans_minibatch(samples.len() / 10, k, max_iter, KMeans::init_kmeanplusplus, &conf);
+
+    let assignements = result.assignments;
+
+    let clusters =
+        assignements
+            .iter()
+            .enumerate()
+            .fold(HashMap::new(), |mut acc, (idx, cluster)| {
+                acc.entry(*cluster)
+                    .or_insert_with(Vec::new)
+                    .push(samples[idx].0.clone());
+                acc
+            });
+
+    clusters.into_iter().map(|(_, v)| v).collect()
 }
 
 fn create_turn_observation_space() -> ObservationSpace {
