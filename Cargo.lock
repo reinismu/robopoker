@@ -686,6 +686,7 @@ dependencies = [
 [[package]]
 name = "kmeans"
 version = "0.12.0"
+source = "git+https://github.com/reinismu/kmean-rs?rev=8bf03b9227076ace9592a331d60a9ac9e2afb54d#8bf03b9227076ace9592a331d60a9ac9e2afb54d"
 dependencies = [
  "num 0.4.3",
  "num-traits",
