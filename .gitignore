@@ -1,14 +1,12 @@
 /target
-.DS_Store
-.vscode/*
 /data
+.vscode/*
+.DS_Store
 .todo
 .env
 .swp
-profile.json
 *.pgcopy
-<<<<<<< Updated upstream
 analysis/*.png
-=======
 /images
->>>>>>> Stashed changes
+*.log
+*.png

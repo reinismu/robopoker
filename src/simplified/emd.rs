@@ -33,13 +33,13 @@ impl EMDContext {
     pub fn approximate_emd(&self, point: &Histogram, mean: &Histogram) -> f64 {
         let mut targets: Vec<f64> = vec![0.0; 51];
         let mut mean_remaining: Vec<f64> = vec![0.0; 51];
-        let point_total = point.norm as f64;
-        let mean_total = mean.norm as f64;
+        let point_total = point.mass as f64;
+        let mean_total = mean.mass as f64;
 
-        for (&k, &v) in &point.weights {
+        for (&k, &v) in &point.contribution {
             targets[k.value() as usize] = v as f64 / point_total;
         }
-        for (&k, &v) in &mean.weights {
+        for (&k, &v) in &mean.contribution {
             mean_remaining[k.value() as usize] = v as f64 / mean_total;
         }
 

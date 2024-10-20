@@ -38,13 +38,12 @@ impl Metric {
             0.
         } else {
             match (x, y) {
-                (Abstraction::Equity(a), Abstraction::Equity(b)) => (a - b).abs() as f32,
                 (Abstraction::Random(_), Abstraction::Random(_)) => self
                     .0
                     .get(&Pair::from((x, y)))
                     .copied()
                     .expect("precalculated distance"),
-                _ => unreachable!("invalid abstraction pair"),
+                _ => unreachable!("no distance lookup for equity or pocket abstractions"),
             }
         }
     }
@@ -103,14 +102,13 @@ impl Metric {
     }
 
     /// save profile to disk in a PGCOPY compatible format
-    pub fn save(&self, path: String) {
-        log::info!("uploading abstraction metric {}", path);
+    pub fn save(&self, street: String) {
+        log::info!("uploading abstraction metric {}", street);
         use byteorder::BigEndian;
         use byteorder::WriteBytesExt;
         use std::fs::File;
         use std::io::Write;
-        let ref mut file = File::create(format!("{}.metric.pgcopy", path)).expect("new file");
-        // let ref mut progress = Progress::new(self.0.len(), 10);
+        let ref mut file = File::create(format!("{}.metric.pgcopy", street)).expect("new file");
         file.write_all(b"PGCOPY\n\xff\r\n\0").expect("header");
         file.write_u32::<BigEndian>(0).expect("flags");
         file.write_u32::<BigEndian>(0).expect("extension");
@@ -120,7 +118,6 @@ impl Metric {
             file.write_i64::<BigEndian>(i64::from(*pair)).expect("pair");
             file.write_u32::<BigEndian>(4).expect("4-bytes field");
             file.write_f32::<BigEndian>(*distance).expect("distance");
-            // progress.tick();
         }
         file.write_u16::<BigEndian>(0xFFFF).expect("trailer");
     }
@@ -154,7 +151,7 @@ mod tests {
     use crate::utils::persist::try_load;
 
     #[test]
-    fn is_histogram_emd_zero() {
+    fn is_turn_emd_zero() {
         let metric = Metric::default();
         let obs = Observation::from(Street::Turn);
         let ref h1 = Histogram::from(obs.clone());
@@ -164,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn is_histogram_emd_positive() {
+    fn is_turn_emd_positive() {
         let metric = Metric::default();
         let ref h1 = Histogram::from(Observation::from(Street::Turn));
         let ref h2 = Histogram::from(Observation::from(Street::Turn));
@@ -173,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn is_histogram_emd_symmetric() {
+    fn is_turn_emd_symmetric() {
         let metric = Metric::default();
         let ref h1 = Histogram::from(Observation::from(Street::Turn));
         let ref h2 = Histogram::from(Observation::from(Street::Turn));
