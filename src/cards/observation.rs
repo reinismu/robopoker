@@ -45,6 +45,10 @@ impl Observation {
     /// I'm not sure this is feasible across ALL 2.8B rivers * ALL 990 opponents.
     /// But it's a one-time calculation so we can afford to be slow
     pub fn equity(&self) -> f32 {
+        if(self.street() != Street::Rive) {
+            let children = self.children().collect::<Vec<Observation>>();
+            return (children.iter().map(|child| child.equity()).sum::<f32>() / children.len() as f32)
+        }
         assert!(self.street() == Street::Rive);
         let hand = Hand::from(*self);
         let hero = Strength::from(hand);

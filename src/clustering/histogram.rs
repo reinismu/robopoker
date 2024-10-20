@@ -33,6 +33,10 @@ impl Histogram {
         &self.contribution
     }
 
+    pub fn raw_distribution(&self) -> Vec<f32> {
+        Abstraction::range().iter().map(|a| self.weight(a)).collect()
+    }
+
     /// all witnessed Abstractions.
     /// treat this like an unordered array
     /// even though we use BTreeMap for struct.
