@@ -4,7 +4,7 @@ fn main() {
     // Boring stuff
     logging();
 
-    simplified::calculate();
+    simplified::kmeans();
 
     // The k-means earth mover's distance hand-clustering algorithm.
     // clustering::abstractor::Abstractor::learn();

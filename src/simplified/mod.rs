@@ -1,8 +1,12 @@
+#![feature(portable_simd)]
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::iter::Sum;
 use std::path::Path;
 
+use kmeans::HistogramDistance;
+use kmeans::KMeans;
+use kmeans::KMeansConfig;
 use lsh_rs::data::Numeric;
 use lsh_rs::prelude::LshMem;
 use rand::seq::IteratorRandom;
@@ -22,6 +26,63 @@ use crate::{
 
 pub mod emd;
 pub mod lsh;
+
+pub fn kmeans() {
+    let turn_observation_space = persisted_function(
+        "create_turn_observation_space",
+        create_turn_observation_space,
+    )
+    .unwrap();
+
+    // get entries vec
+    let samples = turn_observation_space.0.into_iter().collect::<Vec<_>>();
+    let dim_samples = samples.iter().flat_map(|(i,h)| h.raw_distribution()).collect::<Vec<_>>();
+
+    let max_iter = 10;
+
+    // Calculate kmeans, using kmean++ as initialization-method
+    // KMeans<_, 8> specifies to use f64 SIMD vectors with 8 lanes (e.g. AVX512)
+    let kmean: KMeans<_, 8, _> = KMeans::new(dim_samples, samples.len(), 51, HistogramDistance);
+
+    // config with callback
+    let conf = KMeansConfig::build()
+		.init_done(&|_| log::info!("Turn Kmeans Initialization completed."))
+		.iteration_done(&|s, nr, new_distsum|
+			log::info!("Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
+				nr, s.distsum, new_distsum, s.distsum - new_distsum))
+		.build();
+
+    let result = kmean.kmeans_lloyd(128, max_iter, KMeans::init_kmeanplusplus, &conf);
+
+    let assignements = result.assignments;
+
+    // assignments contain index where each sample belongs to
+
+    let clusters = assignements.iter().enumerate().fold(HashMap::new(), |mut acc, (idx, cluster)| {
+        acc.entry(*cluster).or_insert_with(Vec::new).push(samples[idx].clone());
+        acc
+    });
+
+    // print clusters
+    for (cluster, samples) in clusters.iter() {
+        let first = samples.first().unwrap();
+        log::info!("Cluster ({:.2}) {}: {:?}", first.1.equity(), first.0, samples.len());
+    }
+
+    // Print first cluster random 20 samples
+    let first_cluster = clusters.get(&0).unwrap();
+    let mut rng = thread_rng();
+    let samples = first_cluster.choose_multiple(&mut rng, 20);
+    
+    samples.for_each(|(i, h)| {
+        log::info!("{}: {:.2}", i, h.equity());
+    });
+    
+
+    // println!("Centroids {}: {:?}", result.centroids.len(), result.centroids);
+    // // println!("Cluster-Assignments: {:?}", result.assignments);
+    // println!("Error: {}", result.distsum);
+}
 
 pub fn calculate() {
     let turn_observation_space = persisted_function(
@@ -45,7 +106,7 @@ pub fn calculate() {
         f32,
         lsh_rs::MemoryTable<f32, i8>,
         i8,
-    > = LshMem::new(8, 20, 51).seed(1).l2(0.2).unwrap();
+    > = LshMem::new(8, 20, 51).seed(1).l2(turn_r).unwrap();
 
     let lsh_map = turn_observation_space
         .0
@@ -60,8 +121,8 @@ pub fn calculate() {
     log::info!("LSH Map size: {} LSH = {}", lsh_map.len(), lsh.describe().unwrap());
 
     let qq_turn = Isomorphism::from(Observation::from((
-        Hand::from("Js 6h"),
-        Hand::from("7s 8c Td 7c"),
+        Hand::from("As Ah"),
+        Hand::from("Ad Ac Td"),
     )));
 
     let qq_histogram = turn_observation_space.0.get(&qq_turn).unwrap();
