@@ -1,12 +1,13 @@
-#![feature(portable_simd)]
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::iter::Sum;
 use std::path::Path;
 
+use kmeans::DistanceFunction;
 use kmeans::HistogramDistance;
 use kmeans::KMeans;
 use kmeans::KMeansConfig;
+use kmeans::Primitive;
 use lsh_rs::data::Numeric;
 use lsh_rs::prelude::LshMem;
 use rand::seq::IteratorRandom;
@@ -16,6 +17,8 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 use crate::cards::hand::Hand;
+use crate::clustering::datasets::FlopObservationSpace;
+use crate::clustering::histogram;
 use crate::utils::persist::persisted_function;
 use crate::{
     cards::{isomorphism::Isomorphism, observation::Observation, street::Street},
@@ -34,11 +37,7 @@ pub fn kmeans() {
     )
     .unwrap();
 
-
-    log::info!(
-        "Turn space size = {}",
-        turn_observation_space.0.len()
-    );
+    log::info!("Turn space size = {}", turn_observation_space.0.len());
 
     let turn_observation_space_clusters =
         persisted_function("cluster_turn_observation_space_500_300", || {
@@ -73,6 +72,53 @@ pub fn kmeans() {
     // println!("Centroids {}: {:?}", result.centroids.len(), result.centroids);
     // // println!("Cluster-Assignments: {:?}", result.assignments);
     // println!("Error: {}", result.distsum);
+}
+
+pub fn kmeans_flop() {
+    let turn_observation_space = persisted_function(
+        "create_turn_observation_space",
+        create_turn_observation_space,
+    )
+    .unwrap();
+
+    let flop_observation_space = persisted_function("create_flop_observation_space", || {
+        create_flop_observation_space(&turn_observation_space)
+    })
+    .unwrap();
+
+    let flop_observation_space_clusters =
+        persisted_function("cluster_flop_observation_space_500_300", || {
+            cluster_flop_observation_space(&flop_observation_space, 500, 300)
+        })
+        .unwrap();
+
+    // print clusters
+    for cluster in flop_observation_space_clusters.iter() {
+        let first = cluster.first().unwrap();
+        let histogram = flop_observation_space.0.get(first).unwrap();
+        let histogram = histogram::Histogram::from(histogram);
+        log::info!(
+            "Cluster ({:.2}) {}: {:?}",
+            histogram.equity(),
+            first,
+            cluster.len()
+        );
+    }
+
+    // Print first cluster random 20 samples
+    let first_cluster = flop_observation_space_clusters.first().unwrap();
+    let mut rng = thread_rng();
+    let samples = first_cluster.choose_multiple(&mut rng, 20);
+
+    samples.for_each(|i| {
+        let histogram = flop_observation_space.0.get(i).unwrap();
+        let histogram = histogram::Histogram::from(histogram);
+        log::info!(
+            "{}: {:.2}",
+            i,
+            histogram.equity()
+        );
+    });
 }
 
 pub fn calculate() {
@@ -158,6 +204,132 @@ pub fn calculate() {
     // log::info!("Preflop space size {}", pref_observation_space.0.len());
 }
 
+pub struct Histogram2dDistance {
+    hist_count: usize,
+}
+
+// Separate implementation block for additional methods
+impl Histogram2dDistance {
+    pub fn distance1d<T>(&self, a: &[T], b: &[T]) -> T
+    where
+        T: Primitive,
+    {
+        let mut total = T::zero();
+        let mut cdf_a = T::zero();
+        let mut cdf_b = T::zero();
+        for (x, y) in a.iter().zip(b.iter()) {
+            cdf_a += x;
+            cdf_b += y;
+            total += (cdf_a - cdf_b).abs();
+        }
+        total
+    }
+}
+
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
+impl<T, const LANES: usize> DistanceFunction<T, LANES> for Histogram2dDistance
+where
+    T: Primitive,
+    LaneCount<LANES>: std::simd::SupportedLaneCount,
+    Simd<T, LANES>: kmeans::SupportedSimdArray<T, LANES>,
+{
+    fn distance(&self, a: &[T], b: &[T]) -> T {
+        // a and b are falttened 2d histograms
+        // row count is hist_count
+        // split them by that and run distance1d. Sum it up then
+        let mut total = T::zero();
+        for i in 0..self.hist_count {
+            let start = i * 51;
+            let end = (i + 1) * 51;
+            total += self.distance1d(&a[start..end], &b[start..end]);
+        }
+
+        total
+    }
+}
+
+fn cluster_flop_observation_space(
+    flop_observation_space: &FlopObservationSpace,
+    k: usize,
+    max_iter: usize,
+) -> Vec<Vec<Isomorphism>> {
+    let mut samples = flop_observation_space.0.iter().collect::<Vec<_>>();
+
+    let mut hist_count = 1;
+    samples.iter().take(1).for_each(|(i, hs)| {
+        hist_count = hs.len();
+    });
+
+    let dim_samples = samples
+        .iter_mut()
+        .flat_map(|(_, histories)| {
+            let mut sorted_histories = histories.clone();
+            sorted_histories.sort_by(|a, b| {
+                a.equity()
+                    .partial_cmp(&b.equity())
+                    .expect("Equity comparison should never be NaN")
+            });
+            sorted_histories
+        })
+        .flat_map(|history| history.raw_distribution())
+        .collect::<Vec<_>>();
+
+
+    log::info!("Samples: {}", samples.len());
+    log::info!("Dim Samples: {}", dim_samples.len());
+    log::info!("hist_count: {}", hist_count);
+    // Calculate kmeans, using kmean++ as initialization-method
+    // KMeans<_, 8> specifies to use f64 SIMD vectors with 8 lanes (e.g. AVX512)
+    let kmean: KMeans<_, 8, _> = KMeans::new(
+        dim_samples,
+        samples.len(),
+        51 * hist_count,
+        Histogram2dDistance { hist_count },
+    );
+
+    let conf = KMeansConfig::build()
+        .init_done(&|_| log::info!("Flop Kmeans Initialization completed."))
+        .iteration_done(&|s, nr, new_distsum| {
+            log::info!(
+                "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
+                nr,
+                s.distsum,
+                new_distsum,
+                s.distsum - new_distsum
+            )
+        })
+        .abort_strategy(kmeans::AbortStrategy::NoImprovementForXIterations {
+            x: 40,
+            threshold: 10.,
+            abort_on_negative: false,
+        })
+        .build();
+
+    log::info!("Starting KMeans clustering");
+    let result = kmean.kmeans_minibatch(
+        samples.len() / 10,
+        k,
+        max_iter,
+        KMeans::init_kmeanplusplus,
+        &conf,
+    );
+
+    let assignements = result.assignments;
+
+    let clusters =
+        assignements
+            .iter()
+            .enumerate()
+            .fold(HashMap::new(), |mut acc, (idx, cluster)| {
+                acc.entry(*cluster)
+                    .or_insert_with(Vec::new)
+                    .push(samples[idx].0.clone());
+                acc
+            });
+
+    clusters.into_iter().map(|(_, v)| v).collect()
+}
+
 fn cluster_turn_observation_space(
     turn_observation_space: &ObservationSpace,
     k: usize,
@@ -193,7 +365,13 @@ fn cluster_turn_observation_space(
         .build();
 
     log::info!("Starting KMeans clustering");
-    let result = kmean.kmeans_minibatch(samples.len() / 10, k, max_iter, KMeans::init_kmeanplusplus, &conf);
+    let result = kmean.kmeans_minibatch(
+        samples.len() / 10,
+        k,
+        max_iter,
+        KMeans::init_kmeanplusplus,
+        &conf,
+    );
 
     let assignements = result.assignments;
 
@@ -237,6 +415,30 @@ fn create_turn_histogram(turn_isomorphism: &Isomorphism) -> Histogram {
         .into()
 }
 
+fn create_flop_observation_space(
+    turn_observation_space: &ObservationSpace,
+) -> FlopObservationSpace {
+    log::info!("creating flop observation space");
+    let isomorphisms = Observation::exhaust(Street::Flop)
+        .filter(Isomorphism::is_canonical)
+        .map(Isomorphism::from)
+        .collect::<Vec<Isomorphism>>();
+    let progress = create_progress(isomorphisms.len());
+
+    let space = isomorphisms
+        .into_par_iter()
+        .map(|isomorphism| {
+            (
+                isomorphism,
+                create_flop_histograms(&isomorphism, turn_observation_space),
+            )
+        })
+        .inspect(|_| progress.inc(1))
+        .collect::<BTreeMap<Isomorphism, Vec<Histogram>>>();
+
+    FlopObservationSpace(space)
+}
+
 fn create_pref_observation_space(flop_observation_space: &ObservationSpace) -> ObservationSpace {
     log::info!("creating flop observation space");
     let isomorphisms = Observation::exhaust(Street::Pref)
@@ -259,32 +461,10 @@ fn create_pref_observation_space(flop_observation_space: &ObservationSpace) -> O
     ObservationSpace(space)
 }
 
-fn create_flop_observation_space(turn_observation_space: &ObservationSpace) -> ObservationSpace {
-    log::info!("creating flop observation space");
-    let isomorphisms = Observation::exhaust(Street::Flop)
-        .filter(Isomorphism::is_canonical)
-        .map(Isomorphism::from)
-        .collect::<Vec<Isomorphism>>();
-    let progress = create_progress(isomorphisms.len());
-
-    let space = isomorphisms
-        .into_par_iter()
-        .map(|isomorphism| {
-            (
-                isomorphism,
-                create_flop_histogram(&isomorphism, turn_observation_space),
-            )
-        })
-        .inspect(|_| progress.inc(1))
-        .collect::<BTreeMap<Isomorphism, Histogram>>();
-
-    ObservationSpace(space)
-}
-
-fn create_flop_histogram(
+fn create_flop_histograms(
     flop_isomorphism: &Isomorphism,
     turn_observation_space: &ObservationSpace,
-) -> Histogram {
+) -> Vec<Histogram> {
     let obs = flop_isomorphism.0;
 
     obs.children()
@@ -296,7 +476,6 @@ fn create_flop_histogram(
                 .clone()
         })
         .collect::<Vec<Histogram>>()
-        .into()
 }
 
 fn create_pref_histogram(

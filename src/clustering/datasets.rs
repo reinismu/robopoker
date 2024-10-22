@@ -13,6 +13,9 @@ use std::collections::BTreeMap;
 #[derive(Default, Serialize, Deserialize)]
 pub struct ObservationSpace(pub BTreeMap<Isomorphism, Histogram>);
 
+#[derive(Default, Serialize, Deserialize)]
+pub struct FlopObservationSpace(pub BTreeMap<Isomorphism, Vec<Histogram>>);
+
 /// intermediate data structure to mutate during kmeans
 /// as `Equivalence`s become assigned to `Abstraction`s.
 #[derive(Default)]

@@ -149,6 +149,16 @@ impl From<Vec<Histogram>> for Histogram {
     }
 }
 
+impl From<&Vec<Histogram>> for Histogram {
+    fn from(a: &Vec<Histogram>) -> Self {
+        a.iter()
+            .fold(Histogram::default(), |mut hist, abs| {
+                hist.absorb(abs);
+                hist
+            })
+    }
+}
+
 impl std::fmt::Display for Histogram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         assert!(matches!(self.peek(), Abstraction::Equity(_)));

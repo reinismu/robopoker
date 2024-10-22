@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 pub mod cards;
 pub mod clustering;
 pub mod mccfr;
